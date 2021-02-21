@@ -1,0 +1,176 @@
+---
+title: "Mapes estadístics de Catalunya"
+author: "Pere Millán-Martínez"
+date: "21 de gener de 2021"
+output:
+  html_document
+---
+
+<style type="text/css">
+
+body, td {
+   font-size: 12px;
+}
+code.r{
+  font-family: "Courier New", Courier, monospace;
+  font-size: 13px;
+	font-style: normal;
+	font-variant: normal;
+	font-weight: 400;
+	line-height: 14.2833px;
+	text-align: left;
+}
+pre {
+  font-family: "Courier New", Courier, monospace;
+    font-size: 11px;
+    font-style: italic;
+    font-variant: normal;
+    font-weight: 400;
+    line-height: 14.2833px;
+    text-align: left;
+}
+</style>
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, error=FALSE}
+################################
+### Paràmetres globals knitr ###
+################################
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, results='hide', fig.width = 9, fig.height = 7)
+```
+
+
+```{r}
+#############################
+### Càrrega de llibreries ###
+#############################
+
+library(ggplot2)
+library(rgdal)
+library(RColorBrewer)
+library(RJSONIO)
+```
+
+```{r}
+################################
+### Càrrega de capes de base ###
+################################
+
+# Directori amb el recull de capes actualitzat a 19-02-2021
+dsn_basemun <- "ICGC/BASE_MUNICIPAL/bm5mv21sh0tc1_20200601_0"
+
+# Perímetre de Catalunya
+shapefile0 <- readOGR(dsn = dsn_basemun, layer = "Catalunya")
+shp_cat_pol <- fortify(shapefile0)
+
+# Perímetre de provincies
+shapefile1 <- readOGR(dsn = dsn_basemun, layer="bm5mv21sh0tpp1_20200601_0")
+shp_prv_pol <- fortify(shapefile1, region = "CODIPROV")
+
+# Perímetre de comarques
+shapefile2 <- readOGR(dsn = dsn_basemun, layer="bm5mv21sh0tpc1_20200601_0")
+shp_com_pol <- fortify(shapefile2, region = "CODICOMAR")
+
+# Perímetre de municipis
+shapefile3 <- readOGR(dsn = dsn_basemun, layer="bm5mv21sh0tpm1_20200601_0")
+shp_mun_pol <- fortify(shapefile3, region = "CODIMUNI")
+
+# Punts de municipis
+shapefile4 <- readOGR(dsn = dsn_basemun, layer="bm5mv21sh0tcm1_20200601_0")
+shp_mun_pnt <- as.data.frame(shapefile4)
+
+```
+
+```{r}
+###########################################
+### Càrrega de dades a nivell municipal ###
+###########################################
+
+# Altitud
+query1 <- "http://api.idescat.cat/emex/v1/geo.json?i=f271&tipus=cat,mun&lang=en"
+parsed.query1   <- RJSONIO::fromJSON(content = query1, encoding = 'UTF-8')
+```
+
+
+```{r}
+############################
+### Formació del dataset ###
+############################
+
+# Estructurem com a data.frame
+id              <- sapply(parsed.query1$fitxes$cols$col, function(x) x[[2]])
+name            <- sapply(parsed.query1$fitxes$cols$col, function(x) x[[3]])
+observation     <- as.numeric(unlist(strsplit(parsed.query1$fitxes$indicadors$i$v[[1]][], 
+                                              split=", ")))
+df_observation  <- data.frame(id, name, observation)
+```
+
+
+```{r}
+#############################################
+### Unió dels datasets de base i de dades ###
+#############################################
+
+# Unió dels dos data.frame
+merge.shp.coef  <- merge(shp_mun_pol, df_observation, by="id", all.x=TRUE)
+data_to_plot      <- merge.shp.coef[order(merge.shp.coef$order), ]
+```
+
+```{r}
+############################
+### Adaptació de l'estil ###
+############################
+
+# Estil personalitzat
+theme_set(theme_void())
+
+theme_mapa <- theme(
+  legend.title = element_text(size = 10),
+  legend.justification = c(1, 0),
+  legend.position = c(0.9, 0.1),
+  text = element_text(family = "Liberation Sans")
+)
+
+#Escala de color personalitzada
+myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(4, "Spectral")))
+```
+
+```{r}
+###############################
+### Graficació de les dades ###
+###############################
+
+peuimatge <- "Superfície en km2 dels municipis.Fonts: ICGC i IDESCAT (EMEX).\nPere Millán-Martínez (2021)"
+unitat <- "km2"
+
+ggplot() + 
+  geom_polygon(data=data_to_plot, 
+               aes(x = long, y = lat, group = group, fill = observation),
+               color = "transparent", size = 0.1) +
+  geom_path(data = shp_mun_pol,
+            aes(x = long, y = lat, group = group),
+            size = .1, alpha = 0.25) +
+  geom_path(data = shp_com_pol, 
+            aes(x = long, y = lat, group = group),
+            size = .2) +
+  ## Aquestes linies són per a dibuixar el perfil provincial 
+  # geom_path(data = shp_prv_pol, 
+  #           aes(x = long, y = lat, group = group),
+  #           size = .2) +
+  ## Aquestes linies són per a dibuixar de Catalunya 
+  # geom_path(data = shp_cat_pol, 
+  #           aes(x = long, y = lat, group = group),
+  #           size = .2) +
+  coord_fixed() +
+  scale_fill_gradientn(colours = myPalette(3),
+                       na.value="transparent",
+                       limits=c(0, max(merge.shp.coef$observation, na.rm=TRUE)),
+                       name = unitat) +
+  labs(caption= peuimatge) +
+  guides(fill = guide_colorbar(barwidth = unit(2, 'mm'), 
+                               title.theme = element_text(size = 9))) +
+  theme_mapa
+
+## En el cas de voler desar la imatge en un fitxer png cal descomentar la següent línia:
+# ggsave("exemple_mapa.png",plot = last_plot(), device = "png")
+```
