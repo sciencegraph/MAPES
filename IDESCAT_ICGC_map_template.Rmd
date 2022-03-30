@@ -101,7 +101,7 @@ parsed.query1   <- RJSONIO::fromJSON(content = query1, encoding = 'UTF-8')
 id              <- sapply(parsed.query1$fitxes$cols$col, function(x) x[[2]])
 name            <- sapply(parsed.query1$fitxes$cols$col, function(x) x[[3]])
 observation     <- as.numeric(unlist(strsplit(parsed.query1$fitxes$indicadors$i$v[[1]][], 
-                                              split=", ")))
+                                              split=",")))
 df_observation  <- data.frame(id, name, observation)
 ```
 
